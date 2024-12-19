@@ -24,8 +24,11 @@ import (
 )
 
 const (
-	sdkName             = "sds-go-sdk"
-	headerNameUserAgent = "User-Agent"
+	sdkName              = "sds-go-sdk"
+	headerNameUserAgent  = "User-Agent"
+	blockApiVersion      = "2024-12-15" // Volume and host operations
+	objectApiVersion     = "2024-12-04" // Cred and cert operations
+	headerNameAPIVersion = "IBM-API-Version"
 )
 
 // GetSdkHeaders - returns the set of SDK-specific headers to be included in an outgoing request.
@@ -68,6 +71,13 @@ func GetSdkHeaders(serviceName string, serviceVersion string, operationId string
 
 	sdkHeaders[headerNameUserAgent] = GetUserAgentInfo()
 
+	switch operationId {
+	case "Creds", "CredCreate", "CredDelete", "Cert", "CertUpload":
+		sdkHeaders[headerNameAPIVersion] = objectApiVersion
+	default:
+		sdkHeaders[headerNameAPIVersion] = blockApiVersion
+	}
+
 	return sdkHeaders
 }
 
@@ -85,5 +95,5 @@ func GetSystemInfo() string {
 
 func GetComponentInfo() *core.ProblemComponent {
 	// This should match the module name in go.mod.
-	return core.NewProblemComponent("github.com/IBM/sds-go-sdk", Version)
+	return core.NewProblemComponent("github.ibm.com/SDSaaS/sds-go-sdk", Version)
 }

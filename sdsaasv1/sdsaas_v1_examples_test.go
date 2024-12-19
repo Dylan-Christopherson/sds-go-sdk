@@ -1,4 +1,4 @@
-//go:build examples
+//go:build integration
 
 /**
  * (C) Copyright IBM Corp. 2024.
@@ -19,63 +19,62 @@
 package sdsaasv1_test
 
 import (
-	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"time"
 
 	"github.com/IBM/go-sdk-core/v5/core"
-
-	"github.com/IBM/sds-go-sdk/sdsaasv1"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"github.ibm.com/SDSaaS/sds-go-sdk/sdsaasv1"
 )
 
-// This file provides an example of how to use the sdsaas service.
-//
-// The following configuration properties are assumed to be defined:
-// SDSAAS_URL=<service base url>
-// SDSAAS_AUTH_TYPE=iam
-// SDSAAS_APIKEY=<IAM apikey>
-// SDSAAS_AUTH_URL=<IAM token service base URL - omit this if using the production environment> (in stage, set to https://iam.test.cloud.ibm.com)
-//
-// These configuration properties can be exported as environment variables, or stored
-// in a configuration file and then:
-// export IBM_CREDENTIALS_FILE=<name of configuration file>
-var _ = Describe(`SdsaasV1 Examples Tests`, func() {
+/**
+ * This file contains an integration test for the sdsaasv1 package.
+ *
+ * Notes:
+ *
+ * The integration test will automatically skip tests if the required config file is not available.
+ */
 
+var _ = Describe(`SdsaasV1 Integration Tests`, func() {
 	const externalConfigFile = "../sdsaas_v1.env"
 
 	var (
+		err           error
 		sdsaasService *sdsaasv1.SdsaasV1
+		serviceURL    string
 		config        map[string]string
 
 		// Variables to hold link values
 		hostIDLink      string
-		volumeIDLinkOne string
+		volumeIDLink    string
 		volumeIDLinkTwo string
 	)
 
 	var shouldSkipTest = func() {
-		Skip("External configuration is not available, skipping examples...")
+		Skip("External configuration is not available, skipping tests...")
 	}
 
 	Describe(`External configuration`, func() {
 		It("Successfully load the configuration", func() {
-			var err error
 			_, err = os.Stat(externalConfigFile)
 			if err != nil {
-				Skip("External configuration file not found, skipping examples: " + err.Error())
+				Skip("External configuration file not found, skipping tests: " + err.Error())
 			}
 
 			os.Setenv("IBM_CREDENTIALS_FILE", externalConfigFile)
 			config, err = core.GetServiceProperties(sdsaasv1.DefaultServiceName)
 			if err != nil {
-				Skip("Error loading service properties, skipping examples: " + err.Error())
-			} else if len(config) == 0 {
-				Skip("Unable to load service properties, skipping examples")
+				Skip("Error loading service properties, skipping tests: " + err.Error())
+			}
+			serviceURL = config["URL"]
+			if serviceURL == "" {
+				Skip("Unable to load service URL configuration property, skipping tests")
 			}
 
+			fmt.Fprintf(GinkgoWriter, "Service URL: %v\n", serviceURL)
 			shouldSkipTest = func() {}
 		})
 	})
@@ -85,499 +84,387 @@ var _ = Describe(`SdsaasV1 Examples Tests`, func() {
 			shouldSkipTest()
 		})
 		It("Successfully construct the service client instance", func() {
-			var err error
-
-			// begin-common
-
 			sdsaasServiceOptions := &sdsaasv1.SdsaasV1Options{}
 
 			sdsaasService, err = sdsaasv1.NewSdsaasV1UsingExternalConfig(sdsaasServiceOptions)
-
-			if err != nil {
-				panic(err)
-			}
-
-			// end-common
-
+			Expect(err).To(BeNil())
 			Expect(sdsaasService).ToNot(BeNil())
+			Expect(sdsaasService.Service.Options.URL).To(Equal(serviceURL))
+
+			core.SetLogger(core.NewLogger(core.LevelDebug, log.New(GinkgoWriter, "", log.LstdFlags), log.New(GinkgoWriter, "", log.LstdFlags)))
+			sdsaasService.EnableRetries(4, 30*time.Second)
 		})
 	})
 
-	Describe(`SdsaasV1 request examples`, func() {
+	Describe(`VolumeCreate - Create a new volume`, func() {
 		BeforeEach(func() {
 			shouldSkipTest()
 		})
-		It(`VolumeCreate request example`, func() {
-			fmt.Println("\nVolumeCreate() result:")
-			// begin-volume_create
-
-			volumeCreateOptions := sdsaasService.NewVolumeCreateOptions(
-				int64(10),
-			)
-
-			volumeCreateOptions.SetHostnqnstring("nqn.2014-06.org:9345")
-			volumeCreateOptions.SetName("my-volume-one")
-
-			volumeOne, responseOne, errOne := sdsaasService.VolumeCreate(volumeCreateOptions)
-			if errOne != nil {
-				panic(errOne)
+		It(`VolumeCreate(volumeCreateOptions *VolumeCreateOptions)`, func() {
+			volumeCreateOptions := &sdsaasv1.VolumeCreateOptions{
+				Capacity:      core.Int64Ptr(int64(1)),
+				Name:          core.StringPtr("my-volume-one"),
+				Hostnqnstring: core.StringPtr("nqn.2014-06.org:9345"),
 			}
-			b, _ := json.MarshalIndent(volumeOne, "", "  ")
-			fmt.Println(string(b))
 
-			// Create a second volume for additional host operations
-			volumeCreateOptionsTwo := sdsaasService.NewVolumeCreateOptions(
-				int64(10),
-			)
-			volumeCreateOptionsTwo.SetHostnqnstring("nqn.2014-06.org:9345")
-			volumeCreateOptionsTwo.SetName("my-volume-two")
+			volumeCreateOptionsTwo := &sdsaasv1.VolumeCreateOptions{
+				Capacity:      core.Int64Ptr(int64(2)),
+				Name:          core.StringPtr("my-volume-two"),
+				Hostnqnstring: core.StringPtr("nqn.2014-06.org:9345"),
+			}
+
+			volume, response, err := sdsaasService.VolumeCreate(volumeCreateOptions)
+			Expect(err).To(BeNil())
+			Expect(response.StatusCode).To(Equal(201))
+			Expect(volume).ToNot(BeNil())
 
 			volumeTwo, responseTwo, errTwo := sdsaasService.VolumeCreate(volumeCreateOptionsTwo)
-			if errTwo != nil {
-				panic(errTwo)
-			}
-
-			// end-volume_create
-
-			time.Sleep(8 * time.Second)
-
-			Expect(errOne).To(BeNil())
-			Expect(responseOne.StatusCode).To(Equal(201))
-			Expect(volumeOne).ToNot(BeNil())
-
 			Expect(errTwo).To(BeNil())
 			Expect(responseTwo.StatusCode).To(Equal(201))
 			Expect(volumeTwo).ToNot(BeNil())
 
-			volumeIDLinkOne = *volumeOne.ID
+			volumeIDLink = *volume.ID
 			volumeIDLinkTwo = *volumeTwo.ID
-			fmt.Fprintf(GinkgoWriter, "Saved volumeIDLinkOne value: %v\n", volumeIDLinkOne)
-			fmt.Fprintf(GinkgoWriter, "Saved volumeIDLinkTwo value: %v\n", volumeIDLinkTwo)
+
+			fmt.Fprintf(GinkgoWriter, "Saved volumeIDLink value: %v\n", volumeIDLink)
+
+			time.Sleep(5 * time.Second)
 		})
-		It(`HostCreate request example`, func() {
-			fmt.Println("\nHostCreate() result:")
-			// begin-host_create
+	})
 
-			hostCreateOptions := sdsaasService.NewHostCreateOptions(
-				"nqn.2014-06.org:9345",
-			)
+	Describe(`HostCreate - Creates a host`, func() {
+		BeforeEach(func() {
+			shouldSkipTest()
+		})
+		It(`HostCreate(hostCreateOptions *HostCreateOptions)`, func() {
+			volumeMappingIdentityModel := &sdsaasv1.VolumeMappingIdentity{
+				VolumeID: &volumeIDLink,
+			}
 
-			hostCreateOptions.SetName("my-host")
+			hostCreateOptions := &sdsaasv1.HostCreateOptions{
+				Nqn:     core.StringPtr("nqn.2014-06.org:9345"),
+				Name:    core.StringPtr("my-host"),
+				Volumes: []sdsaasv1.VolumeMappingIdentity{*volumeMappingIdentityModel},
+			}
 
 			host, response, err := sdsaasService.HostCreate(hostCreateOptions)
-			if err != nil {
-				panic(err)
-			}
-			b, _ := json.MarshalIndent(host, "", "  ")
-			fmt.Println(string(b))
-
-			// end-host_create
-
 			Expect(err).To(BeNil())
 			Expect(response.StatusCode).To(Equal(201))
 			Expect(host).ToNot(BeNil())
 
 			hostIDLink = *host.ID
 			fmt.Fprintf(GinkgoWriter, "Saved hostIDLink value: %v\n", hostIDLink)
-		})
-		It(`Volumes request example`, func() {
-			fmt.Println("\nVolumes() result:")
-			// begin-volumes
 
-			volumesOptions := sdsaasService.NewVolumesOptions()
-			volumesOptions.SetLimit(int64(10))
-			volumesOptions.SetName("my-volume-one")
+			time.Sleep(5 * time.Second)
+		})
+	})
+
+	Describe(`Volumes - This request lists all volumes in the region`, func() {
+		BeforeEach(func() {
+			shouldSkipTest()
+		})
+		It(`Volumes(volumesOptions *VolumesOptions)`, func() {
+			volumesOptions := &sdsaasv1.VolumesOptions{
+				Limit: core.Int64Ptr(int64(10)),
+				Name:  core.StringPtr("my-volume"),
+			}
 
 			volumeCollection, response, err := sdsaasService.Volumes(volumesOptions)
-			if err != nil {
-				panic(err)
-			}
-			b, _ := json.MarshalIndent(volumeCollection, "", "  ")
-			fmt.Println(string(b))
-
-			// end-volumes
-
 			Expect(err).To(BeNil())
 			Expect(response.StatusCode).To(Equal(200))
 			Expect(volumeCollection).ToNot(BeNil())
 		})
-		It(`Volume request example`, func() {
-			fmt.Println("\nVolume() result:")
-			// begin-volume
+	})
 
-			volumeOptions := sdsaasService.NewVolumeOptions(
-				volumeIDLinkOne,
-			)
+	Describe(`Volume - Retrieve a volume profile`, func() {
+		BeforeEach(func() {
+			shouldSkipTest()
+		})
+		It(`Volume(volumeOptions *VolumeOptions)`, func() {
+			volumeOptions := &sdsaasv1.VolumeOptions{
+				VolumeID: &volumeIDLink,
+			}
 
 			volume, response, err := sdsaasService.Volume(volumeOptions)
-			if err != nil {
-				panic(err)
-			}
-			b, _ := json.MarshalIndent(volume, "", "  ")
-			fmt.Println(string(b))
-
-			// end-volume
-
 			Expect(err).To(BeNil())
 			Expect(response.StatusCode).To(Equal(200))
 			Expect(volume).ToNot(BeNil())
 		})
-		It(`VolumeUpdate request example`, func() {
-			fmt.Println("\nVolumeUpdate() result:")
-			// begin-volume_update
+	})
 
-			volumeUpdateOptions := sdsaasService.NewVolumeUpdateOptions(
-				volumeIDLinkOne,
-			)
-
-			volumePatch := map[string]interface{}{
-				"name": "my-volume-updated",
+	Describe(`VolumeUpdate - Update a volume`, func() {
+		BeforeEach(func() {
+			shouldSkipTest()
+		})
+		It(`VolumeUpdate(volumeUpdateOptions *VolumeUpdateOptions)`, func() {
+			volumePatchModel := &sdsaasv1.VolumePatch{
+				Name: core.StringPtr("my-volume-one-updated"),
 			}
+			volumePatchModelAsPatch, asPatchErr := volumePatchModel.AsPatch()
+			Expect(asPatchErr).To(BeNil())
 
-			volumeUpdateOptions.SetVolumePatch(volumePatch)
+			volumeUpdateOptions := &sdsaasv1.VolumeUpdateOptions{
+				VolumeID:    &volumeIDLink,
+				VolumePatch: volumePatchModelAsPatch,
+			}
 
 			volume, response, err := sdsaasService.VolumeUpdate(volumeUpdateOptions)
-			if err != nil {
-				panic(err)
-			}
-			b, _ := json.MarshalIndent(volume, "", "  ")
-			fmt.Println(string(b))
-
-			// end-volume_update
-
 			Expect(err).To(BeNil())
 			Expect(response.StatusCode).To(Equal(200))
 			Expect(volume).ToNot(BeNil())
-		})
-		It(`Creds request example`, func() {
-			fmt.Println("\nCreds() result:")
-			// begin-creds
 
-			credsOptions := sdsaasService.NewCredsOptions()
+			time.Sleep(5 * time.Second)
+		})
+	})
+
+	Describe(`Creds - List storage account credentials`, func() {
+		BeforeEach(func() {
+			shouldSkipTest()
+		})
+		It(`Creds(credsOptions *CredsOptions)`, func() {
+			credsOptions := &sdsaasv1.CredsOptions{}
 
 			credentialsFound, response, err := sdsaasService.Creds(credsOptions)
-			if err != nil {
-				panic(err)
-			}
-			b, _ := json.MarshalIndent(credentialsFound, "", "  ")
-			fmt.Println(string(b))
-
-			// end-creds
-
 			Expect(err).To(BeNil())
 			Expect(response.StatusCode).To(Equal(200))
 			Expect(credentialsFound).ToNot(BeNil())
 		})
-		It(`CredCreate request example`, func() {
-			fmt.Println("\nCredCreate() result:")
-			// begin-cred_create
+	})
 
-			credCreateOptions := sdsaasService.NewCredCreateOptions(
-				"mytestkey",
-			)
+	Describe(`CredCreate - Create or modify storage account credentials`, func() {
+		BeforeEach(func() {
+			shouldSkipTest()
+		})
+		It(`CredCreate(credCreateOptions *CredCreateOptions)`, func() {
+			credCreateOptions := &sdsaasv1.CredCreateOptions{
+				AccessKey: core.StringPtr("mytestkey"),
+			}
 
 			credentialsUpdated, response, err := sdsaasService.CredCreate(credCreateOptions)
-			if err != nil {
-				panic(err)
-			}
-			b, _ := json.MarshalIndent(credentialsUpdated, "", "  ")
-			fmt.Println(string(b))
-
-			// end-cred_create
-
 			Expect(err).To(BeNil())
-			Expect(response.StatusCode).To(Equal(200))
+			Expect(response.StatusCode).To(Equal(200)) // Set this to 201 when it works as expected...
 			Expect(credentialsUpdated).ToNot(BeNil())
-		})
-		It(`Cert request example`, func() {
-			fmt.Println("\nCert() result:")
-			// begin-cert
 
-			certOptions := sdsaasService.NewCertOptions()
+			time.Sleep(5 * time.Second)
+		})
+	})
+
+	Describe(`Cert - Retrieves the S3 SSL certificate expiration date and status`, func() {
+		BeforeEach(func() {
+			shouldSkipTest()
+		})
+		It(`Cert(certOptions *CertOptions)`, func() {
+			certOptions := &sdsaasv1.CertOptions{}
 
 			certificateFound, response, err := sdsaasService.Cert(certOptions)
-			if err != nil {
-				panic(err)
-			}
-			b, _ := json.MarshalIndent(certificateFound, "", "  ")
-			fmt.Println(string(b))
-
-			// end-cert
-
 			Expect(err).To(BeNil())
 			Expect(response.StatusCode).To(Equal(200))
 			Expect(certificateFound).ToNot(BeNil())
 		})
-		// It(`CertUpload request example`, func() {
-		// 	fmt.Println("\nCertUpload() result:")
-		// 	// begin-cert_upload
+	})
 
-		// 	// Generate a temp cert
-		// 	var tc, tk string
-		// 	cert, key, _ := testcerts.GenerateCertsToTempFile("/tmp/")
-		// 	c, _ := os.Open(cert)
-		// 	k, _ := os.Open(key)
-		// 	defer c.Close()
-		// 	defer k.Close()
-		// 	scanner1 := bufio.NewScanner(c)
-		// 	for scanner1.Scan() {
-		// 		tc = tc + scanner1.Text() + `\n`
-		// 	}
-		// 	scanner2 := bufio.NewScanner(k)
-		// 	for scanner2.Scan() {
-		// 		tk = tk + scanner2.Text() + `\n`
-		// 	}
-		// 	tempCert := tk + tc
+	// Describe(`CertUpload - Creates/updates the S3 SSL Certificates`, func() {
+	// 	BeforeEach(func() {
+	// 		shouldSkipTest()
+	// 	})
+	// 	It(`CertUpload(certUploadOptions *CertUploadOptions)`, func() {
 
-		// 	certUploadOptions := sdsaasService.NewCertUploadOptions(
-		// 		CreateMockReader(tempCert),
-		// 	)
+	// 		// Generate a temp cert
+	// 		var tc, tk string
+	// 		cert, key, _ := testcerts.GenerateCertsToTempFile("/tmp/")
+	// 		c, _ := os.Open(cert)
+	// 		k, _ := os.Open(key)
+	// 		defer c.Close()
+	// 		defer k.Close()
+	// 		scanner1 := bufio.NewScanner(c)
+	// 		for scanner1.Scan() {
+	// 			tc = tc + scanner1.Text() + `\n`
+	// 		}
+	// 		scanner2 := bufio.NewScanner(k)
+	// 		for scanner2.Scan() {
+	// 			tk = tk + scanner2.Text() + `\n`
+	// 		}
+	// 		tempCert := tk + tc
 
-		// 	certificateUpdated, response, err := sdsaasService.CertUpload(certUploadOptions)
-		// 	if err != nil {
-		// 		panic(err)
-		// 	}
-		// 	b, _ := json.MarshalIndent(certificateUpdated, "", "  ")
-		// 	fmt.Println(string(b))
+	// 		certUploadOptions := &sdsaasv1.CertUploadOptions{
+	// 			Body: CreateMockReader(tempCert),
+	// 		}
 
-		// 	// end-cert_upload
+	// 		certificateUpdated, response, err := sdsaasService.CertUpload(certUploadOptions)
+	// 		Expect(err).To(BeNil())
+	// 		Expect(response.StatusCode).To(Equal(202))
+	// 		Expect(certificateUpdated).ToNot(BeNil())
+	// 	})
+	// })
 
-		// 	Expect(err).To(BeNil())
-		// 	Expect(response.StatusCode).To(Equal(202))
-		// 	Expect(certificateUpdated).ToNot(BeNil())
-		// })
-
-		It(`Hosts request example`, func() {
-			fmt.Println("\nHosts() result:")
-			// begin-hosts
-
-			hostsOptions := sdsaasService.NewHostsOptions()
-			hostsOptions.SetLimit(int64(10))
-			hostsOptions.SetName("myhost1")
+	Describe(`Hosts - Lists all hosts and all host IDs`, func() {
+		BeforeEach(func() {
+			shouldSkipTest()
+		})
+		It(`Hosts(hostsOptions *HostsOptions)`, func() {
+			hostsOptions := &sdsaasv1.HostsOptions{
+				Limit: core.Int64Ptr(int64(10)),
+				Name:  core.StringPtr("my-host"),
+			}
 
 			hostCollection, response, err := sdsaasService.Hosts(hostsOptions)
-			if err != nil {
-				panic(err)
-			}
-			b, _ := json.MarshalIndent(hostCollection, "", "  ")
-			fmt.Println(string(b))
-
-			// end-hosts
-
 			Expect(err).To(BeNil())
 			Expect(response.StatusCode).To(Equal(200))
 			Expect(hostCollection).ToNot(BeNil())
 		})
-		It(`Host request example`, func() {
-			fmt.Println("\nHost() result:")
-			// begin-host
+	})
 
-			hostOptions := sdsaasService.NewHostOptions(
-				hostIDLink,
-			)
+	Describe(`Host - Retrieve a host by ID`, func() {
+		BeforeEach(func() {
+			shouldSkipTest()
+		})
+		It(`Host(hostOptions *HostOptions)`, func() {
+			hostOptions := &sdsaasv1.HostOptions{
+				HostID: &hostIDLink,
+			}
 
 			host, response, err := sdsaasService.Host(hostOptions)
-			if err != nil {
-				panic(err)
-			}
-			b, _ := json.MarshalIndent(host, "", "  ")
-			fmt.Println(string(b))
-
-			// end-host
-
 			Expect(err).To(BeNil())
 			Expect(response.StatusCode).To(Equal(200))
 			Expect(host).ToNot(BeNil())
 		})
-		It(`HostUpdate request example`, func() {
-			fmt.Println("\nHostUpdate() result:")
-			// begin-host_update
+	})
 
-			hostUpdateOptions := sdsaasService.NewHostUpdateOptions(
-				hostIDLink,
-			)
-
-			hostPatch := map[string]interface{}{
-				"name": "my-host-updated",
+	Describe(`HostUpdate - Update a host`, func() {
+		BeforeEach(func() {
+			shouldSkipTest()
+		})
+		It(`HostUpdate(hostUpdateOptions *HostUpdateOptions)`, func() {
+			hostPatchModel := &sdsaasv1.HostPatch{
+				Name: core.StringPtr("my-host-updated"),
 			}
+			hostPatchModelAsPatch, asPatchErr := hostPatchModel.AsPatch()
+			Expect(asPatchErr).To(BeNil())
 
-			hostUpdateOptions.SetHostPatch(hostPatch)
+			hostUpdateOptions := &sdsaasv1.HostUpdateOptions{
+				HostID:    &hostIDLink,
+				HostPatch: hostPatchModelAsPatch,
+			}
 
 			host, response, err := sdsaasService.HostUpdate(hostUpdateOptions)
-			if err != nil {
-				panic(err)
-			}
-			b, _ := json.MarshalIndent(host, "", "  ")
-			fmt.Println(string(b))
-
-			// end-host_update
-
 			Expect(err).To(BeNil())
 			Expect(response.StatusCode).To(Equal(200))
 			Expect(host).ToNot(BeNil())
-		})
-		It(`HostVolUpdate request example`, func() {
-			fmt.Println("\nHostVolUpdate() result:")
-			// begin-host_vol_update
 
-			hostVolUpdateOptions := sdsaasService.NewHostVolUpdateOptions(
-				hostIDLink,
-				volumeIDLinkOne,
-			)
+			time.Sleep(8 * time.Second)
+		})
+	})
+
+	Describe(`HostVolUpdate - Maps the given volume to the given host`, func() {
+		BeforeEach(func() {
+			shouldSkipTest()
+		})
+		It(`HostVolUpdate(hostVolUpdateOptions *HostVolUpdateOptions)`, func() {
+			hostVolUpdateOptions := &sdsaasv1.HostVolUpdateOptions{
+				HostID:   &hostIDLink,
+				VolumeID: &volumeIDLinkTwo,
+			}
 
 			host, response, err := sdsaasService.HostVolUpdate(hostVolUpdateOptions)
-			if err != nil {
-				panic(err)
-			}
-			b, _ := json.MarshalIndent(host, "", "  ")
-			fmt.Println(string(b))
-
-			// Assign the second volume to the host as well
-			hostVolUpdateOptionsTwo := sdsaasService.NewHostVolUpdateOptions(
-				hostIDLink,
-				volumeIDLinkTwo,
-			)
-
-			hostTwo, responseTwo, errTwo := sdsaasService.HostVolUpdate(hostVolUpdateOptionsTwo)
-			if err != nil {
-				panic(err)
-			}
-
-			// end-host_vol_update
-
 			Expect(err).To(BeNil())
 			Expect(response.StatusCode).To(Equal(202))
 			Expect(host).ToNot(BeNil())
 
-			Expect(errTwo).To(BeNil())
-			Expect(responseTwo.StatusCode).To(Equal(202))
-			Expect(hostTwo).ToNot(BeNil())
+			time.Sleep(8 * time.Second)
 		})
+	})
 
-		It(`HostVolDelete request example`, func() {
-			// begin-host_volid_delete
-
-			hostVolDeleteOptions := sdsaasService.NewHostVolDeleteOptions(
-				hostIDLink,
-				volumeIDLinkTwo,
-			)
-
-			response, err := sdsaasService.HostVolDelete(hostVolDeleteOptions)
-			if err != nil {
-				panic(err)
-			}
-			if response.StatusCode != 204 {
-				fmt.Printf("\nUnexpected response status code received from HostVolDelete(): %d\n", response.StatusCode)
-			}
-
-			// end-host_volid_delete
-
-			Expect(err).To(BeNil())
-			Expect(response.StatusCode).To(Equal(204))
-
-			// Make sure the volumes are no longer attached before deleting anything
-			time.Sleep(15 * time.Second)
+	Describe(`CredDelete - Delete storage account credentials`, func() {
+		BeforeEach(func() {
+			shouldSkipTest()
 		})
-
-		It(`HostVolDeleteall request example`, func() {
-			// begin-host_vol_deleteall
-
-			hostVolDeleteallOptions := sdsaasService.NewHostVolDeleteallOptions(
-				hostIDLink,
-			)
-
-			response, err := sdsaasService.HostVolDeleteall(hostVolDeleteallOptions)
-			if err != nil {
-				panic(err)
+		It(`CredDelete(credDeleteOptions *CredDeleteOptions)`, func() {
+			credDeleteOptions := &sdsaasv1.CredDeleteOptions{
+				AccessKey: core.StringPtr("mytestkey"),
 			}
-			if response.StatusCode != 204 {
-				fmt.Printf("\nUnexpected response status code received from HostVolDeleteall(): %d\n", response.StatusCode)
-			}
-
-			// end-host_vol_deleteall
-
-			Expect(err).To(BeNil())
-			Expect(response.StatusCode).To(Equal(204))
-
-			// Make sure the volumes are no longer attached before deleting anything
-			time.Sleep(15 * time.Second)
-		})
-
-		It(`VolumeDelete request example`, func() {
-			// begin-volume_delete
-
-			volumeDeleteOptions := sdsaasService.NewVolumeDeleteOptions(
-				volumeIDLinkOne,
-			)
-
-			response, err := sdsaasService.VolumeDelete(volumeDeleteOptions)
-			if err != nil {
-				panic(err)
-			}
-			if response.StatusCode != 204 {
-				fmt.Printf("\nUnexpected response status code received from VolumeDelete(): %d\n", response.StatusCode)
-			}
-
-			// Delete the second volume
-			volumeDeleteOptionsTwo := sdsaasService.NewVolumeDeleteOptions(
-				volumeIDLinkTwo,
-			)
-
-			responseTwo, errTwo := sdsaasService.VolumeDelete(volumeDeleteOptionsTwo)
-			if errTwo != nil {
-				panic(errTwo)
-			}
-			if responseTwo.StatusCode != 204 {
-				fmt.Printf("\nUnexpected response status code received from VolumeDelete(): %d\n", response.StatusCode)
-			}
-
-			// end-volume_delete
-
-			Expect(err).To(BeNil())
-			Expect(response.StatusCode).To(Equal(204))
-
-			Expect(errTwo).To(BeNil())
-			Expect(responseTwo.StatusCode).To(Equal(204))
-		})
-		It(`CredDelete request example`, func() {
-			// begin-cred_delete
-
-			credDeleteOptions := sdsaasService.NewCredDeleteOptions(
-				"mytestkey",
-			)
 
 			response, err := sdsaasService.CredDelete(credDeleteOptions)
-			if err != nil {
-				panic(err)
-			}
-			if response.StatusCode != 200 {
-				fmt.Printf("\nUnexpected response status code received from CredDelete(): %d\n", response.StatusCode)
-			}
-
-			// end-cred_delete
-
 			Expect(err).To(BeNil())
-			Expect(response.StatusCode).To(Equal(200))
+			Expect(response.StatusCode).To(Equal(200)) // Set this to 204 when it works as expected
 		})
-		It(`HostDelete request example`, func() {
-			// begin-host_delete
+	})
 
-			hostDeleteOptions := sdsaasService.NewHostDeleteOptions(
-				hostIDLink,
-			)
+	Describe(`HostVolDelete - Deletes the given volume mapping for a specific host`, func() {
+		BeforeEach(func() {
+			shouldSkipTest()
+		})
+		It(`HostVolidDelete(hostVolidDeleteOptions *HostVolDeleteOptions)`, func() {
+			hostVolDeleteOptions := &sdsaasv1.HostVolDeleteOptions{
+				HostID:   &hostIDLink,
+				VolumeID: &volumeIDLink,
+			}
+
+			response, err := sdsaasService.HostVolDelete(hostVolDeleteOptions)
+			Expect(err).To(BeNil())
+			Expect(response.StatusCode).To(Equal(204))
+
+			time.Sleep(8 * time.Second)
+		})
+	})
+
+	Describe(`HostVolDeleteall - Deletes all the volume mappings for a given host`, func() {
+		BeforeEach(func() {
+			shouldSkipTest()
+		})
+		It(`HostVolDeleteall(hostVolDeleteallOptions *HostVolDeleteallOptions)`, func() {
+			hostVolDeleteallOptions := &sdsaasv1.HostVolDeleteallOptions{
+				HostID: &hostIDLink,
+			}
+
+			response, err := sdsaasService.HostVolDeleteall(hostVolDeleteallOptions)
+			Expect(err).To(BeNil())
+			Expect(response.StatusCode).To(Equal(204))
+
+			time.Sleep(8 * time.Second)
+		})
+	})
+
+	Describe(`HostDelete - Delete a specific host`, func() {
+		BeforeEach(func() {
+			shouldSkipTest()
+		})
+		It(`HostDelete(hostDeleteOptions *HostDeleteOptions)`, func() {
+			hostDeleteOptions := &sdsaasv1.HostDeleteOptions{
+				HostID: &hostIDLink,
+			}
 
 			response, err := sdsaasService.HostDelete(hostDeleteOptions)
-			if err != nil {
-				panic(err)
-			}
-			if response.StatusCode != 204 {
-				fmt.Printf("\nUnexpected response status code received from HostDelete(): %d\n", response.StatusCode)
+			Expect(err).To(BeNil())
+			Expect(response.StatusCode).To(Equal(204))
+
+			time.Sleep(5 * time.Second)
+		})
+	})
+
+	Describe(`VolumeDelete - Delete a volume`, func() {
+		BeforeEach(func() {
+			shouldSkipTest()
+		})
+		It(`VolumeDelete(volumeDeleteOptions *VolumeDeleteOptions)`, func() {
+			volumeDeleteOptions := &sdsaasv1.VolumeDeleteOptions{
+				VolumeID: &volumeIDLink,
 			}
 
-			// end-host_delete
+			response, err := sdsaasService.VolumeDelete(volumeDeleteOptions)
+			Expect(err).To(BeNil())
+			Expect(response.StatusCode).To(Equal(204))
 
+			volumeDeleteOptionsTwo := &sdsaasv1.VolumeDeleteOptions{
+				VolumeID: &volumeIDLinkTwo,
+			}
+
+			response, err = sdsaasService.VolumeDelete(volumeDeleteOptionsTwo)
 			Expect(err).To(BeNil())
 			Expect(response.StatusCode).To(Equal(204))
 		})
 	})
 })
+
+//
+// Utility functions are declared in the unit test file
+//
